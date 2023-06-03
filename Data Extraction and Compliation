@@ -1,0 +1,183 @@
+## Necessary packages
+import requests
+from bs4 import BeautifulSoup
+from collections import defaultdict
+import json
+
+## Main Listing API Call
+## https://rapidapi.com/apimaker/api/us-real-estate-listings/
+
+def listings_csv(output1, sample = False):
+    
+    url = "https://us-real-estate-listings.p.rapidapi.com/for-sale"
+    
+    headers = {
+	"X-RapidAPI-Key": "XXXX-XXXX-XXXX-XXXX",
+	"X-RapidAPI-Host": "us-real-estate-listings.p.rapidapi.com"
+    }
+    
+    ## Setting the number of listings I want in my data set as well as sample data set.
+    offset = 0
+    limit = 200
+    wanted_listings = 10000
+    
+    if sample:
+        limit = 5
+        wanted_listings = 5
+        
+    all_listings = []
+    
+    ## API Call where we want our list of all listing to be under the set wanted_listings to avoid excessive API calls.
+    while len(all_listings) < wanted_listings:
+        querystring = {"location":"California","offset":offset,"limit":limit}
+        response = requests.request("GET", url, headers=headers, params=querystring)
+        info = response.json()
+        listings = info['listings']
+        all_listings.extend(listings)
+        offset += limit
+    
+    result = defaultdict(list)
+    
+    ## Extracting necessary data from the API in order to compile our data set.
+    for listing in all_listings:
+        address = listing['location']['address']['line']
+        city = listing['location']['address']['city']
+        county = listing['location']['county']
+        if county is not None:
+            county = county['name']
+        sqft = listing['description']['sqft']
+        beds = listing['description']['beds']
+        baths = listing['description']['baths']
+        sqft_lot = listing['description']['lot_sqft']
+        price = listing['list_price']
+        result[address].append((city,county, sqft, beds, baths, sqft_lot, price))
+        
+    ## Writing Output file
+    with open(output1,'w') as f_out:
+        f_out.write('Address, City,County, Sqft, beds, baths, Sqft of Lot, Price\n')
+        for address, data in result.items():
+            for listing_data in data:
+                city,county, sqft, beds, baths, sqft_lot,price = listing_data
+                f_out.write(f'{address}, {city},{county}, {sqft}, {beds}, {baths}, {sqft_lot}, {price}\n')
+                
+# main csv we will use that includes 10,000 listings. 
+listings_csv('listings.csv',sample = False)           
+
+# sample csv for listings download.
+listings_csv('listings_sample.csv',sample = True)
+
+## Creating Crime Rate CSV
+
+def crime_rate_csv(output2, sample = False):
+    
+    ## Scraping from the url for necessary data.
+    result = defaultdict(int)
+    content = requests.get('https://en.wikipedia.org/wiki/California_locations_by_crime_rate')
+    soup = BeautifulSoup(content.content, 'html.parser')
+    tables = soup.find_all('table', {'class':'wikitable sortable'})
+
+    city = tables[1]
+    rows = city.find_all('tr')[1:]
+    
+    
+    if sample == True:
+        rows = rows[:5]
+    
+    ## Extracting necessary data from the website in order to compile our data set.
+    for row in rows:
+        data = row.find_all('td')
+        city = data[0].text.strip()
+        county = data[1].text.strip()
+        violent_crime = float(data[4].text.strip().replace(',',''))
+        violent_crime_per_1000 = float(data[5].text.strip().replace(',',''))
+        property_crime = float(data[6].text.strip().replace(',',''))
+        property_crime_per_1000 = float(data[7].text.strip().replace(',',''))
+        result[city] = (county, violent_crime, violent_crime_per_1000, property_crime, property_crime_per_1000)
+    
+    ## Writing Output file
+    with open(output2, 'w') as f_out:
+        f_out.write('City,County, Violent Crime, Violent Crime Per 1000,Property Crime,Property Crime Per 1000\n')
+        for city, data in result.items():
+            f_out.write(f'{city},{data[0]},{data[1]},{data[2]},{data[3]}, {data[4]}\n')
+
+# Downloading the Crime Rate CSV
+crime_rate_csv('Crime_Rate.csv', sample = False)
+
+# sample crime rate csv
+crime_rate_csv('Crime_Rate_Sample.csv', sample = True)
+
+## Creating income CSV
+def income_csv(output3, sample = False):
+    
+    ## Scraping from the url for necessary data.
+    result = defaultdict(int)
+    content = requests.get('https://en.wikipedia.org/wiki/List_of_California_locations_by_income')
+    soup = BeautifulSoup(content.content, 'html.parser')
+    tables = soup.find_all('table', {'class': 'wikitable sortable'})
+    
+    city = tables[1]
+    rows = city.find_all('tr')[1:]
+    
+    if sample == True:
+        rows = rows[:5]
+        
+    ## Extracting necessary data from the website in order to compile our data set. 
+    for row in rows:
+        data = row.find_all('td')
+        city = data[0].text.strip().replace(',','')
+        county = data[1].text.strip().replace(',','')
+        income_per_capita = float(data[4].text.strip().replace(',','').replace('$','').replace('[7]','0'))
+        median_household_income = float(data[5].text.strip().replace(',','').replace('$','').replace('[7]','0'))
+        result[city] = (county, income_per_capita, median_household_income)
+         
+    ## Writing Output file  
+    with open(output3,'w') as f_out:
+        f_out.write('City, County, Income Per Capita, Median Household Income\n')
+        for city, data in result.items():
+            f_out.write(f'{city},{data[0]},{data[1]},{data[2]}\n')
+        
+    
+# income csv download
+income_csv('Income.csv',sample = False)
+
+# income csv sample
+income_csv('Income_Sample.csv',sample = True)
+
+## Creating school ranking CSV
+
+def school_ranking_csv(input_file,output4,sample = False, rows = 0):
+    ## Extracting only necesssary data from downloaded csv file
+    with open(input_file,'r') as f_in, open(output4,'w') as f_out:
+        result = defaultdict(int)
+        count_row = 0
+        
+        next(f_in)
+        for line in f_in:
+            columns = line.strip().split(',')
+            rank = columns[0]
+            city = columns[1]
+            elementary_schools = columns[3]
+            middle_schools = columns[4]
+            high_schools = columns[5]
+            private = columns[7]
+            rank_score = float(columns[8])
+            result[city] = (rank, elementary_schools, middle_schools, high_schools, private, rank_score)
+            
+            if sample == True and count_row == rows:
+                break
+        
+            count_row += 1
+            
+        ## Writing Output file
+        f_out.write('City,Rank,Number Of Elementary Schools, Number of Middle Schools,Number of High Schools,\
+                       Numbers of Private Schools, Rank Score\n')
+        for city, data in result.items():
+            f_out.write(f'{city}, {data[0]}, {data[1]},{data[2]},{data[3]},{data[4]},{data[5]}\n')
+            
+# school ranking csv
+school_ranking_csv('california_city_school_rankings.csv', 'school_ranking.csv', sample = False)            
+            
+# school ranking csv sample
+school_ranking_csv('california_city_school_rankings.csv', 'school_ranking_sample.csv', sample=True, rows=4)  
+
+    
